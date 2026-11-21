@@ -1,0 +1,26 @@
+#:schema https://dystroy.org/bacon/.bacon.schema.json
+
+default_job = "check"
+env.CARGO_TERM_COLOR = "always"
+
+[jobs.check]
+command = ["cargo", "check"]
+
+[jobs.check-all]
+command = ["cargo", "check", "--all-targets"]
+
+[jobs.clippy-all]
+command = ["cargo", "clippy", "--all-targets"]
+
+[jobs.test]
+command = ["cargo", "test"]
+need_stdout = true
+
+[jobs.fmt]
+command = ["cargo", "+nightly", "fmt"]
+
+[keybindings]
+a = "job:check-all"
+c = "job:clippy-all"
+f = "job:fmt"
+t = "job:test"

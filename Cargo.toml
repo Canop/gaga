@@ -1,0 +1,29 @@
+[package]
+name = "gaga"
+version = "0.1.0"
+authors = ["dystroy <denys.seguret@gmail.com>"]
+edition = "2024"
+description = "git shortcuts for the shell, with numbered files"
+keywords = ["git", "shell", "cli"]
+license = "0BSD"
+categories = ["command-line-utilities"]
+readme = "README.md"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+cli-log = "2.1"
+lazy-regex = "3.6.2"
+libc = "0.2"
+rusqlite = { version = "0.43", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+termimad = "0.35.5"
+thiserror = "2.0"
+toml = "1"
+toml_edit = "0.25.20"
+
+[profile.release]
+strip = true
+
+[patch.crates-io]
+# cli-log = { path = "../cli-log" }
+# termimad = { path = "../termimad" }

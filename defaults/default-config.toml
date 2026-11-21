@@ -1,0 +1,48 @@
+# Configuration of gaga, written by `gaga install`, which
+# adds the missing entries when run again.
+# The aliases and the jump function are set when a shell starts:
+# open a new one after having changed them.
+
+# When entering a repository with more changed files, only their count is shown
+max_listed_on_enter = 50
+
+# Name of the shell function jumping to a visited repository: `c <name>`
+jump_function = "c"
+
+# Shell aliases: the value is what's given to gg
+[aliases]
+gs = "status"
+ga = "add"
+gd = "diff"
+gdc = "diff --cached"
+gu = "unstage"
+ge = "e"
+grm = "rm"
+
+# Commands: `gg <name> <args>` runs the command with the args added,
+# numbers and ranges being replaced with the files of the last status.
+# `$NAME` is replaced with the content of the env variable.
+# `gg` without argument is `gg bare`.
+[commands.bare]
+command = ["gaga", "status"]
+
+[commands.add]
+command = ["git", "add"]
+status_after = true
+
+[commands.unstage]
+command = ["git", "reset", "-q", "--"]
+status_after = true
+
+[commands.diff]
+command = ["git", "diff"]
+
+[commands.e]
+command = ["$EDITOR"]
+
+[commands.conf]
+command = ["$EDITOR", "$HOME/.config/gaga/config.toml"]
+
+[commands.rm]
+command = ["rm", "-r", "--"]
+status_after = true
