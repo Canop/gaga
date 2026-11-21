@@ -58,6 +58,7 @@ It only adds what's missing, and tells what it does. Run it again after an updat
 | `gc` | `gg commit` | `git commit`, then status |
 | `gl` | `gg log` | `git log` as a graph |
 | `gla` | `gg log --branches --remotes` | the same with all branches |
+| `gps` | `gg push` | `git push` |
 | `ge` | `gg e` | open in `$EDITOR` |
 | `grm` | `gg rm` | delete, then status |
 

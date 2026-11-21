@@ -19,6 +19,7 @@ gdc = "diff --cached"
 gc = "commit"
 gl = "log"
 gla = "log --branches --remotes"
+gps = "push"
 ge = "e"
 grm = "rm"
 
@@ -56,6 +57,9 @@ command = [
     "--date=format:%Y-%m-%d %H:%M",
     "--pretty=format:%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cd) %C(bold blue)<%an>%Creset",
 ]
+
+[commands.push]
+command = ["git", "push"]
 
 [commands.e]
 command = ["$EDITOR"]
