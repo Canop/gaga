@@ -151,14 +151,14 @@ fn run_custom(
         .commands
         .get(name)
         .ok_or_else(|| GagaError::UnknownCommand(name.clone()))?;
-    let files = if args.iter().any(|arg| number_range(arg).is_some()) {
-        let session = session().ok_or(GagaError::NoSession)?;
-        Db::open()?.files(session)?
-    } else {
-        Vec::new()
-    };
     let mut tokens = command.tokens();
-    tokens.extend(resolve_args(args, &files)?);
+    if command.numbers && args.iter().any(|arg| number_range(arg).is_some()) {
+        let session = session().ok_or(GagaError::NoSession)?;
+        let files = Db::open()?.files(session)?;
+        tokens.extend(resolve_args(args, &files)?);
+    } else {
+        tokens.extend_from_slice(args);
+    }
     debug!("running {tokens:?}");
     let Some((exe, exe_args)) = tokens.split_first().filter(|(exe, _)| !exe.is_empty()) else {
         return Err(GagaError::EmptyCommand(name.clone()));

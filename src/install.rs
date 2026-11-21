@@ -201,11 +201,7 @@ fn complete_config(
                 };
                 (name.clone(), reset)
             }
-            Some("commands") => {
-                let command = default_config.commands.get(name);
-                let reset = command.map(|command| command.command.join(" "));
-                (format!("gg {name}"), reset.unwrap_or_default())
-            }
+            Some("commands") => (format!("gg {name}"), default_value.to_string()),
             _ => {
                 let reset = match default_value.as_str() {
                     Some(reset) => reset.to_string(),
@@ -293,7 +289,7 @@ command = ["git", "log"]
 command = ["trash"]
 "#;
     let (completed, unchanged) = complete_config(toml, &mut report).unwrap();
-    assert_eq!(unchanged, 1);
+    assert_eq!(unchanged, 2);
     assert!(completed.starts_with("# my config\nmax_listed_on_enter = 20\n"));
     assert!(completed.contains("gs = \"status\" # kept\nga = \"add -p\"\ngl = \"log\"\n"));
     assert!(report.contains(&"Adding gd".to_string()));
@@ -302,9 +298,13 @@ command = ["trash"]
     assert!(report.contains(
         &"Not changing your ga definition - remove it to reset it to `git add`".to_string()
     ));
-    assert!(report.contains(
-        &"Not changing your gg rm definition - remove it to reset it to `rm -r --`".to_string()
-    ));
+    assert!(
+        report.contains(
+            &"Not changing your gg rm definition - remove it to reset it to \
+        `{ command = [\"rm\", \"-r\", \"--\"], numbers = true, status_after = true }`"
+                .to_string()
+        )
+    );
     let config = Config::parse(&completed, "test".into()).unwrap();
     assert_eq!(config.aliases["ga"], "add -p");
     assert_eq!(config.commands["rm"].command, ["trash"]);

@@ -13,36 +13,58 @@ jump_function = "c"
 [aliases]
 gs = "status"
 ga = "add"
+gu = "unstage"
 gd = "diff"
 gdc = "diff --cached"
-gu = "unstage"
+gc = "commit"
+gl = "log"
+gla = "log --branches --remotes"
 ge = "e"
 grm = "rm"
 
-# Commands: `gg <name> <args>` runs the command with the args added,
-# numbers and ranges being replaced with the files of the last status.
+# Commands: `gg <name> <args>` runs the command with the args added.
 # `$NAME` is replaced with the content of the env variable.
+# With `numbers = true`, numbers and ranges in the args are replaced
+# with the files of the last status.
+# With `status_after = true`, the status is printed after the command.
 # `gg` without argument is `gg bare`.
 [commands.bare]
 command = ["gaga", "status"]
 
 [commands.add]
 command = ["git", "add"]
+numbers = true
 status_after = true
 
 [commands.unstage]
 command = ["git", "reset", "-q", "--"]
+numbers = true
 status_after = true
 
 [commands.diff]
 command = ["git", "diff"]
+numbers = true
+
+[commands.commit]
+command = ["git", "commit"]
+numbers = true
+status_after = true
+
+[commands.log]
+command = [
+    "git", "log", "--graph", "--abbrev-commit",
+    "--date=format:%Y-%m-%d %H:%M",
+    "--pretty=format:%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cd) %C(bold blue)<%an>%Creset",
+]
 
 [commands.e]
 command = ["$EDITOR"]
-
-[commands.conf]
-command = ["$EDITOR", "$HOME/.config/gaga/config.toml"]
+numbers = true
 
 [commands.rm]
 command = ["rm", "-r", "--"]
+numbers = true
 status_after = true
+
+[commands.conf]
+command = ["$EDITOR", "$HOME/.config/gaga/config.toml"]

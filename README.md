@@ -1,5 +1,16 @@
 # gaga
 
+[![Tests][s1]][l1] [![0BSD][s2]][l2] [![Chat on Miaou][s3]][l3]
+
+[s1]: https://github.com/Canop/gaga/actions/workflows/tests.yml/badge.svg
+[l1]: https://github.com/Canop/gaga/actions/workflows/tests.yml
+
+[s2]: https://img.shields.io/badge/license-0BSD-blue.svg
+[l2]: LICENSE
+
+[s3]: https://dystroy.org/chat-shield.svg
+[l3]: https://miaou.dystroy.org/3768?rust
+
 **This program is written by an LLM** (Claude), directed and reviewed by a human.
 
 gaga brings git shortcuts to the shell, in the spirit of scm-breeze: the status is printed with numbered files when you enter a repository, and those numbers can then be used in place of the paths.
@@ -18,7 +29,7 @@ It's a single binary, for zsh and bash. Its shell part is a function, a hook and
 
 ## install
 
-    cargo install --path .
+    cargo install --locked --git https://github.com/Canop/gaga
 
 Then run
 
@@ -32,7 +43,7 @@ It only adds what's missing, and tells what it does. Run it again after an updat
 
 ## usage
 
-`gg <command> <args>` runs a command. Among the arguments, a number like `3` or a range like `3-5` is replaced with the files of the last status printed in this shell. Write `./3` for a file named `3`.
+`gg <command> <args>` runs a command. For the commands taking files, a number like `3` or a range like `3-5` among the arguments is replaced with the files of the last status printed in this shell. Write `./3` for a file named `3`.
 
 | alias | command | effect |
 |-|-|-|
@@ -41,6 +52,9 @@ It only adds what's missing, and tells what it does. Run it again after an updat
 | `gu` | `gg unstage` | remove from the index, then status |
 | `gd` | `gg diff` | `git diff` |
 | `gdc` | `gg diff --cached` | `git diff --cached` |
+| `gc` | `gg commit` | `git commit`, then status |
+| `gl` | `gg log` | `git log` as a graph |
+| `gla` | `gg log --branches --remotes` | the same with all branches |
 | `ge` | `gg e` | open in `$EDITOR` |
 | `grm` | `gg rm` | delete, then status |
 
@@ -60,6 +74,9 @@ To add a `gg blame` command with a `gbl` alias, add `gbl = "blame"` in the `[ali
 
     [commands.blame]
     command = ["git", "blame"]
+    numbers = true
+
+`numbers = true` is what makes numbers replaced with files in the arguments.
 
 The aliases and the `c` function are set by `gaga init`: after having changed them, open a new shell or source its rc file.
 

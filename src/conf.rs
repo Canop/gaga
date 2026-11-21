@@ -30,6 +30,10 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 pub struct CustomCommand {
     pub command: Vec<String>,
+    /// whether numbers and ranges in the arguments are replaced
+    /// with the numbered files
+    #[serde(default)]
+    pub numbers: bool,
     /// whether to print the status after the command
     #[serde(default)]
     pub status_after: bool,

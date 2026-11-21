@@ -5,6 +5,7 @@ authors = ["dystroy <denys.seguret@gmail.com>"]
 edition = "2024"
 description = "git shortcuts for the shell, with numbered files"
 keywords = ["git", "shell", "cli"]
+repository = "https://github.com/Canop/gaga"
 license = "0BSD"
 categories = ["command-line-utilities"]
 readme = "README.md"
