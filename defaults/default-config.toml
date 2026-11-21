@@ -1,7 +1,7 @@
 # Configuration of gaga, written by `gaga install`, which
 # adds the missing entries when run again.
-# The aliases and the jump function are set when a shell starts:
-# open a new one after having changed them.
+# The aliases and the jump function are set when a shell starts: after
+# having changed them, open a new one or source your .zshrc or .bashrc.
 
 # When entering a repository with more changed files, only their count is shown
 max_listed_on_enter = 50

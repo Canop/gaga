@@ -81,7 +81,7 @@ To add a `gg blame` command with a `gbl` alias, add `gbl = "blame"` in the `[ali
 
 `numbers = true` is what makes numbers replaced with files in the arguments.
 
-The aliases and the `c` function are set by `gaga init`: after having changed them, open a new shell or source its rc file.
+The aliases and the `c` function are set by `gaga init`: after having changed them, open a new shell or run `source ~/.zshrc` (or `source ~/.bashrc`).
 
 ## state
 
