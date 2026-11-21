@@ -18,3 +18,12 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install MSRV toolchain
+      run: rustup toolchain install 1.89 --profile minimal
+    - name: Check with MSRV
+      run: cargo +1.89 check --all-targets --verbose

@@ -3,12 +3,14 @@ name = "gaga"
 version = "0.1.0"
 authors = ["dystroy <denys.seguret@gmail.com>"]
 edition = "2024"
+rust-version = "1.89"
 description = "git shortcuts for the shell, with numbered files"
 keywords = ["git", "shell", "cli"]
 repository = "https://github.com/Canop/gaga"
 license = "0BSD"
 categories = ["command-line-utilities"]
 readme = "README.md"
+exclude = [".github", "CLAUDE.md", "bacon.toml", "fmt.sh", "rustfmt.toml"]
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }

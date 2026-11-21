@@ -1,6 +1,6 @@
 # gaga
 
-[![Tests][s1]][l1] [![0BSD][s2]][l2] [![Chat on Miaou][s3]][l3]
+[![Latest Version][s4]][l4] [![Tests][s1]][l1] [![0BSD][s2]][l2] [![Chat on Miaou][s3]][l3]
 
 [s1]: https://github.com/Canop/gaga/actions/workflows/tests.yml/badge.svg
 [l1]: https://github.com/Canop/gaga/actions/workflows/tests.yml
@@ -10,6 +10,9 @@
 
 [s3]: https://dystroy.org/chat-shield.svg
 [l3]: https://miaou.dystroy.org/3768?rust
+
+[s4]: https://img.shields.io/crates/v/gaga.svg
+[l4]: https://crates.io/crates/gaga
 
 **This program is written by an LLM** (Claude), directed and reviewed by a human.
 
@@ -25,11 +28,11 @@ gaga brings git shortcuts to the shell, in the spirit of scm-breeze: the status 
     2 ?? notes.md
     ~/dev/gaga> ge 2
 
-It's a single binary, for zsh and bash. Its shell part is a function, a hook and a few aliases, which it generates itself.
+It's a single binary, for zsh and bash, on Unix only (Linux, macOS, WSL). Its shell part is a function, a hook and a few aliases, which it generates itself.
 
 ## install
 
-    cargo install --locked --git https://github.com/Canop/gaga
+    cargo install --locked gaga
 
 Then run
 
