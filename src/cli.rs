@@ -110,19 +110,21 @@ fn remember_and_print_status<W: Write>(
     let cwd = env::current_dir().map_err(GagaError::Cwd)?;
     let root = find_root(&cwd).ok_or(GagaError::NotInRepo)?;
     let status = time!(Status::read(&cwd))?;
-    let listed = max_listed.is_none_or(|max| status.files.len() <= max);
-    let numbered = match time!(remember_status(root, &status, listed)) {
-        Ok(numbered) => numbered,
+    let unnumbered = match max_listed {
+        Some(max) if status.files.len() > max => FileListing::Count,
+        _ => FileListing::List,
+    };
+    let listing = match time!(remember_status(root, &status, unnumbered)) {
+        Ok(listing) => listing,
         Err(e) if strict => return Err(e),
         Err(e) => {
             warn!("global memory not updated: {e}");
-            false
+            unnumbered
         }
     };
     let printer = StatusPrinter {
         color,
-        listed,
-        numbered,
+        listing,
         cwd: &cwd,
         root,
     };
@@ -134,16 +136,16 @@ fn remember_and_print_status<W: Write>(
 /// they're listed in a shell session, its changed files as the numbered
 /// ones of this session.
 ///
-/// Return whether the files are numbered.
+/// Return the listing, changed to a numbered one when the files are recorded.
 fn remember_status(
     root: &Path,
     status: &Status,
-    listed: bool,
-) -> GagaResult<bool> {
+    listing: FileListing,
+) -> GagaResult<FileListing> {
     let mut db = Db::open()?;
     db.visit(root)?;
-    let Some(session) = session().filter(|_| listed) else {
-        return Ok(false);
+    let (FileListing::List, Some(session)) = (listing, session()) else {
+        return Ok(listing);
     };
     let paths: Vec<PathBuf> = status
         .files
@@ -151,7 +153,7 @@ fn remember_status(
         .map(|file| root.join(&file.path))
         .collect();
     db.set_files(session, &paths)?;
-    Ok(true)
+    Ok(FileListing::NumberedList)
 }
 
 /// Run a command of the configuration, `args` being its name

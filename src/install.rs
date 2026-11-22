@@ -289,10 +289,13 @@ impl<'d> DefaultEntry<'d> {
         default_config: &Config,
     ) -> String {
         match (self.section, self.value.as_str()) {
-            (Some("aliases"), Some(target)) => match default_config.alias_command(target) {
-                Some(tokens) => tokens.join(" "),
-                None => format!("gg {target}"),
-            },
+            (Some("aliases"), Some(target)) => {
+                let alias_target = default_config.aliases.get(self.name);
+                match alias_target.and_then(|target| default_config.alias_command(target)) {
+                    Some(tokens) => tokens.join(" "),
+                    None => format!("gg {target}"),
+                }
+            }
             (None, Some(value)) => value.to_string(),
             _ => self.value.to_string(),
         }
@@ -409,7 +412,7 @@ command = ["trash"]
             assert!(report.contains(&line.to_string()), "missing: {line}");
         }
         let config = Config::parse(&completed, "test".into()).unwrap();
-        assert_eq!(config.aliases["ga"], "add -p");
+        assert_eq!(config.aliases["ga"].as_str(), "add -p");
         assert_eq!(config.commands["rm"].command, ["trash"]);
         assert_eq!(config.commands["log"].command, ["git", "log"]);
         assert_eq!(config.commands["diff"].command, ["git", "diff"]);

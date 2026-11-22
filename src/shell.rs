@@ -9,6 +9,7 @@ use {
             PathBuf,
         },
     },
+    unicode_width::UnicodeWidthStr,
 };
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,10 +94,9 @@ pub fn init_script(
 ) -> String {
     let mut script = GG_FUNCTION.to_string();
     for (alias, target) in &config.aliases {
-        let target = target.replace('\'', r"'\''");
         let _ = writeln!(script, "alias {alias}='gg {target}'");
     }
-    if let Some(name) = config.jump_function.as_deref() {
+    if let Some(name) = &config.jump_function {
         script.push_str(&jump_script(shell, name));
     }
     script.push_str(match shell {
@@ -108,23 +108,30 @@ pub fn init_script(
 
 /// List the shell functions and aliases defined by the init script
 pub fn shell_help(config: &Config) -> String {
-    let jump_function = config.jump_function.as_deref();
-    let width = jump_function.map_or(2, |name| name.len().max(2));
-    let mut help = format!("Shell functions:\n  {:width$}  gaga", "gg");
+    let jump_function = config.jump_function.as_ref().map(ShellName::as_str);
+    let width = jump_function.map_or(2, |name| name.width().max(2));
+    let mut help = format!("Shell functions:\n  {}  gaga", padded("gg", width));
     if let Some(bare) = config.commands.get("bare") {
         let _ = write!(help, ", or without argument: {}", bare.command.join(" "));
     }
     if let Some(name) = jump_function {
-        let _ = write!(help, "\n  {name:width$}  jump to a visited repository");
+        let name = padded(name, width);
+        let _ = write!(help, "\n  {name}  jump to a visited repository");
     }
-    let alias_width = config.aliases.keys().map(String::len).max();
-    let target_width = config.aliases.values().map(String::len).max();
+    let aliases = config
+        .aliases
+        .iter()
+        .map(|(alias, target)| (alias.as_str(), target.as_str(), target));
+    let alias_width = aliases.clone().map(|(alias, _, _)| alias.width()).max();
+    let target_width = aliases.clone().map(|(_, target, _)| target.width()).max();
     if let (Some(alias_width), Some(target_width)) = (alias_width, target_width) {
         help.push_str("\n\nAliases:");
-        for (alias, target) in &config.aliases {
-            let tokens = config.alias_command(target).unwrap_or_default();
+        for (alias, target, alias_target) in aliases {
+            let tokens = config.alias_command(alias_target).unwrap_or_default();
             let line = format!(
-                "\n  {alias:alias_width$}  gg {target:target_width$}  {}",
+                "\n  {}  gg {}  {}",
+                padded(alias, alias_width),
+                padded(target, target_width),
                 tokens.join(" "),
             );
             help.push_str(line.trim_end());
@@ -133,10 +140,44 @@ pub fn shell_help(config: &Config) -> String {
     help
 }
 
+/// The string, followed by the spaces needed to fill the given
+/// number of terminal columns
+fn padded(
+    s: &str,
+    width: usize,
+) -> String {
+    let missing = width.saturating_sub(s.width());
+    format!("{s}{:missing$}", "")
+}
+
+#[test]
+fn test_shell_help_with_wide_chars() {
+    let config = Config::parse(
+        "jump_function = \"\u{65e5}\u{672c}\u{8a9e}\"\n\
+        [aliases]\n\
+        \"g\u{65e5}\" = \"status\"\n\
+        \"\u{e9}\" = \"add\"\n\
+        [commands.add]\n\
+        command = [\"git\", \"add\"]\n",
+        "test".into(),
+    )
+    .unwrap();
+    assert_eq!(
+        shell_help(&config),
+        "Shell functions:\n  \
+        gg      gaga\n  \
+        \u{65e5}\u{672c}\u{8a9e}  jump to a visited repository\n\
+        \n\
+        Aliases:\n  \
+        g\u{65e5}  gg status\n  \
+        \u{e9}    gg add     git add",
+    );
+}
+
 /// Build the function jumping to a repository, and its completion
 fn jump_script(
     shell: Shell,
-    name: &str,
+    name: &ShellName,
 ) -> String {
     let function = format!(
         r#"unalias {name} 2>/dev/null

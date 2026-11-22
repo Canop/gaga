@@ -433,6 +433,7 @@ dependencies = [
  "thiserror",
  "toml",
  "toml_edit",
+ "unicode-width",
 ]
 
 [[package]]

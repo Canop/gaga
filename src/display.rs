@@ -24,11 +24,17 @@ static NUMBER_COLOR: u8 = 244;
 static STAGED_COLOR: u8 = 71;
 static UNSTAGED_COLOR: u8 = 209;
 
+/// How the changed files are shown
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileListing {
+    Count,
+    List,
+    NumberedList,
+}
+
 pub struct StatusPrinter<'a> {
     pub color: bool,
-    /// whether to list the files, not just count them
-    pub listed: bool,
-    pub numbered: bool,
+    pub listing: FileListing,
     pub cwd: &'a Path,
     pub root: &'a Path,
 }
@@ -46,13 +52,13 @@ impl StatusPrinter<'_> {
         if status.behind > 0 {
             write!(w, " ↓{}", status.behind)?;
         }
-        if !self.listed {
+        if self.listing == FileListing::Count {
             return writeln!(w, " - {} changed files", status.files.len());
         }
         writeln!(w)?;
         let width = status.files.len().to_string().len();
         for (idx, file) in status.files.iter().enumerate() {
-            if self.numbered {
+            if self.listing == FileListing::NumberedList {
                 let number = format!("{:>width$}", idx + 1);
                 write!(w, "{} ", self.paint(number, NUMBER_COLOR))?;
             }
@@ -171,8 +177,7 @@ fn test_write_status() {
     .unwrap();
     let mut printer = StatusPrinter {
         color: false,
-        listed: true,
-        numbered: true,
+        listing: FileListing::NumberedList,
         cwd: Path::new("/r/src"),
         root: Path::new("/r"),
     };
@@ -185,7 +190,17 @@ fn test_write_status() {
         2 R  old\\u{1b}.rs -> ../b.rs\n\
         3 ?? ../notes/\n",
     );
-    printer.listed = false;
+    printer.listing = FileListing::List;
+    let mut out = Vec::new();
+    printer.write(&mut out, &status).unwrap();
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "main ↑2\n\
+        \x20M a.rs\n\
+        R  old\\u{1b}.rs -> ../b.rs\n\
+        ?? ../notes/\n",
+    );
+    printer.listing = FileListing::Count;
     let mut out = Vec::new();
     printer.write(&mut out, &status).unwrap();
     assert_eq!(

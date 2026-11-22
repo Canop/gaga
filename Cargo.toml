@@ -24,6 +24,7 @@ termimad = "0.35.5"
 thiserror = "2.0"
 toml = "1"
 toml_edit = "0.25.20"
+unicode-width = "0.1.14"
 
 [profile.release]
 strip = true

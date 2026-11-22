@@ -19,10 +19,10 @@ pub static DEFAULT_CONFIG: &str = include_str!("../defaults/default-config.toml"
 pub struct Config {
     pub max_listed_on_enter: Option<usize>,
     /// name of the shell function jumping to a repository
-    pub jump_function: Option<String>,
+    pub jump_function: Option<ShellName>,
     /// shell alias -> arguments given to `gg`
     #[serde(default)]
-    pub aliases: BTreeMap<String, String>,
+    pub aliases: BTreeMap<ShellName, AliasTarget>,
     #[serde(default)]
     pub commands: BTreeMap<String, CustomCommand>,
 }
@@ -63,9 +63,9 @@ impl Config {
     /// a command of the configuration
     pub fn alias_command(
         &self,
-        target: &str,
+        target: &AliasTarget,
     ) -> Option<Vec<String>> {
-        let mut args = target.split_whitespace();
+        let mut args = target.words();
         let mut tokens = self.commands.get(args.next()?)?.command.clone();
         tokens.extend(args.map(String::from));
         Some(tokens)
@@ -117,7 +117,7 @@ fn test_default_config() {
     let config = Config::parse(DEFAULT_CONFIG, "default".into()).unwrap();
     assert!(config.commands.contains_key("add"));
     for target in config.aliases.values() {
-        let name = target.split_whitespace().next().unwrap();
+        let name = target.words().next().unwrap();
         assert!(name == "status" || config.commands.contains_key(name));
     }
 }

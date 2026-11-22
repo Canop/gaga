@@ -9,6 +9,7 @@ mod install;
 mod numbers;
 mod repo;
 mod shell;
+mod shell_text;
 
 pub use {
     args::*,
@@ -22,6 +23,7 @@ pub use {
     numbers::*,
     repo::*,
     shell::*,
+    shell_text::*,
 };
 
 #[macro_use]
