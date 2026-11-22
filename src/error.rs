@@ -44,6 +44,8 @@ pub enum GagaError {
     NotInRepo,
     #[error("**Error:** numbers can only be used through the `gg` shell function")]
     NoSession,
+    #[error("**Error:** `{0}` isn't a valid file number or range")]
+    InvalidNumbers(String),
     #[error("**Error:** no file with number `{0}`")]
     NoFile(usize),
     #[error("**Error:** no known repository matches `{0}`")]

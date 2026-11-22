@@ -176,10 +176,12 @@ fn run_custom<W: Write>(
         .get(name.as_ref())
         .ok_or_else(|| GagaError::UnknownCommand(name.to_string()))?;
     let mut tokens = command.tokens()?;
-    if command.numbers && args.iter().any(|arg| number_range(arg).is_some()) {
-        let session = session().ok_or(GagaError::NoSession)?;
-        let files = Db::open()?.files(session)?;
-        tokens.extend(resolve_args(args, &files)?);
+    if command.numbers {
+        let load_files = || {
+            let session = session().ok_or(GagaError::NoSession)?;
+            Db::open()?.files(session)
+        };
+        tokens.extend(resolve_args(args, load_files)?);
     } else {
         tokens.extend_from_slice(args);
     }
