@@ -54,8 +54,8 @@ pub fn install<W: Write>(
     } else {
         report.push("Unsupported shell: nothing added to its rc file".to_string());
     }
-    let (unchanged, config_changed) = install_config(&mut report)?;
-    changed |= config_changed;
+    let installed = install_config(&mut report)?;
+    changed |= installed.changed;
     if report.is_empty() {
         writeln!(w, "Nothing to change")?;
     } else {
@@ -71,7 +71,7 @@ pub fn install<W: Write>(
         for line in report {
             writeln!(w, "{}", skin.inline(&line))?;
         }
-        if unchanged > 0 {
+        if installed.unchanged > 0 {
             writeln!(w, "Other entries unchanged")?;
         }
     }
@@ -81,8 +81,8 @@ pub fn install<W: Write>(
         Aliases and commands are defined in {}\n\
         You can change them there, and add your own.\n\
         This list is also given by gaga --help",
-        shell_help(&Config::load()?),
-        Config::path()?.display(),
+        shell_help(&installed.config),
+        installed.path.display(),
     )?;
     if changed
         && let Some(shell) = shell
@@ -167,28 +167,42 @@ fn is_installed(rc: &str) -> bool {
         .any(|line| !line.trim_start().starts_with('#') && line.contains("gaga init"))
 }
 
+/// The configuration file, as left by the installation
+struct InstalledConfig {
+    path: PathBuf,
+    config: Config,
+    /// number of entries which already were the default ones
+    unchanged: usize,
+    /// whether the file was written
+    changed: bool,
+}
+
 /// Write the configuration file if there's none, or add to it the
-/// entries of the default configuration it doesn't have.
-///
-/// Return the number of entries which are the default ones,
-/// and whether the file was written.
-fn install_config(report: &mut Vec<String>) -> GagaResult<(usize, bool)> {
+/// entries of the default configuration it doesn't have
+fn install_config(report: &mut Vec<String>) -> GagaResult<InstalledConfig> {
     let path = Config::path()?;
-    if !path.exists() {
+    let (toml, unchanged, changed) = if path.exists() {
+        let toml = fs::read_to_string(&path)?;
+        let (completed, unchanged) = complete_config(&toml, &path, report)?;
+        let changed = completed != toml;
+        if changed {
+            fs::write(&path, &completed)?;
+        }
+        (completed, unchanged, changed)
+    } else {
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;
         }
         fs::write(&path, DEFAULT_CONFIG)?;
         report.push("Writing the default configuration".to_string());
-        return Ok((0, true));
-    }
-    let toml = fs::read_to_string(&path)?;
-    let (completed, unchanged) = complete_config(&toml, &path, report)?;
-    let changed = completed != toml;
-    if changed {
-        fs::write(&path, completed)?;
-    }
-    Ok((unchanged, changed))
+        (DEFAULT_CONFIG.to_string(), 0, true)
+    };
+    Ok(InstalledConfig {
+        config: Config::parse(&toml, path.clone())?,
+        path,
+        unchanged,
+        changed,
+    })
 }
 
 /// Add to the configuration, which must be valid, the entries
