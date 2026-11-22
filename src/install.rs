@@ -7,7 +7,18 @@ use {
             IsTerminal,
             Write,
         },
-        path::PathBuf,
+        path::{
+            Path,
+            PathBuf,
+        },
+    },
+    termimad::{
+        CompoundStyle,
+        MadSkin,
+        crossterm::style::{
+            Attribute,
+            Color::AnsiValue,
+        },
     },
     toml_edit::{
         DocumentMut,
@@ -18,7 +29,11 @@ use {
 
 /// Add what's missing in the rc files of the shell and in the
 /// configuration file, and tell what was done
-pub fn install<W: Write>(w: &mut W) -> GagaResult<()> {
+pub fn install<W: Write>(
+    w: &mut W,
+    color: bool,
+) -> GagaResult<()> {
+    // report lines are markdown
     let mut report = Vec::new();
     let mut changed = false;
     let shell = Shell::current();
@@ -33,7 +48,7 @@ pub fn install<W: Write>(w: &mut W) -> GagaResult<()> {
                 writeln!(file)?;
             }
             writeln!(file, "{line}")?;
-            report.push(format!("Adding {line} to {}", path.display()));
+            report.push(format!("Adding `{line}` to `{}`", path.display()));
             changed = true;
         }
     } else {
@@ -44,8 +59,17 @@ pub fn install<W: Write>(w: &mut W) -> GagaResult<()> {
     if report.is_empty() {
         writeln!(w, "Nothing to change")?;
     } else {
+        let skin = if color {
+            MadSkin {
+                bold: CompoundStyle::new(Some(AnsiValue(172)), None, Attribute::Bold.into()),
+                inline_code: CompoundStyle::with_fg(AnsiValue(244)),
+                ..Default::default()
+            }
+        } else {
+            MadSkin::no_style()
+        };
         for line in report {
-            writeln!(w, "{line}")?;
+            writeln!(w, "{}", skin.inline(&line))?;
         }
         if unchanged > 0 {
             writeln!(w, "Other entries unchanged")?;
@@ -77,6 +101,7 @@ pub fn install<W: Write>(w: &mut W) -> GagaResult<()> {
 /// can be asked, print the help in other cases
 pub fn install_or_help<W: Write>(
     w: &mut W,
+    color: bool,
     config: Option<&Config>,
 ) -> GagaResult<()> {
     let mut actions = String::new();
@@ -110,7 +135,7 @@ pub fn install_or_help<W: Write>(
     if read == 0 || matches!(answer.trim().chars().next(), Some('n' | 'N')) {
         return Ok(());
     }
-    install(w)?;
+    install(w, color)?;
     w.flush()?;
     Ok(())
 }
@@ -158,13 +183,7 @@ fn install_config(report: &mut Vec<String>) -> GagaResult<(usize, bool)> {
         return Ok((0, true));
     }
     let toml = fs::read_to_string(&path)?;
-    let (completed, unchanged) = complete_config(&toml, report).map_err(|e| match e {
-        GagaError::Config { source, .. } => GagaError::Config {
-            path: path.clone(),
-            source,
-        },
-        e => e,
-    })?;
+    let (completed, unchanged) = complete_config(&toml, &path, report)?;
     let changed = completed != toml;
     if changed {
         fs::write(&path, completed)?;
@@ -172,97 +191,134 @@ fn install_config(report: &mut Vec<String>) -> GagaResult<(usize, bool)> {
     Ok((unchanged, changed))
 }
 
-/// Add to the configuration the entries of the default one it doesn't have.
+/// Add to the configuration, which must be valid, the entries
+/// of the default one it doesn't have.
 ///
 /// Return the new configuration and the number of entries which were
 /// already the default ones.
 fn complete_config(
     toml: &str,
+    path: &Path,
     report: &mut Vec<String>,
 ) -> GagaResult<(String, usize)> {
-    let default_path = PathBuf::from("default-config.toml");
-    let default_config = Config::parse(DEFAULT_CONFIG, default_path.clone())?;
-    let defaults: toml::Table = parse_table(DEFAULT_CONFIG)?;
-    let default_doc: DocumentMut = DEFAULT_CONFIG.parse()?;
-    let user: toml::Table = parse_table(toml)?;
+    Config::parse(toml, path.to_path_buf())?;
+    // values are compared in tables, and added in documents, which keep
+    // the comments and the formatting
+    let user = parse_table(toml, path)?;
     let mut doc: DocumentMut = toml.parse()?;
+    let default_path = Path::new("default-config.toml");
+    let default_config = Config::parse(DEFAULT_CONFIG, default_path.to_path_buf())?;
+    let defaults = parse_table(DEFAULT_CONFIG, default_path)?;
+    let default_doc: DocumentMut = DEFAULT_CONFIG.parse()?;
     let mut unchanged = 0;
-    // an entry is either a top level value, or a value of a top level table
-    let mut entries = Vec::new();
-    for (key, value) in &defaults {
-        match value {
-            toml::Value::Table(table) => {
-                entries.extend(table.iter().map(|(name, value)| (Some(key), name, value)));
-            }
-            _ => entries.push((None, key, value)),
-        }
-    }
-    for (section, name, default_value) in entries {
-        let (label, reset) = match section.map(String::as_str) {
-            Some("aliases") => {
-                let target = default_value.as_str().unwrap_or_default();
-                let reset = match default_config.alias_command(target) {
-                    Some(tokens) => tokens.join(" "),
-                    None => format!("gg {target}"),
-                };
-                (name.clone(), reset)
-            }
-            Some("commands") => (format!("gg {name}"), default_value.to_string()),
-            _ => {
-                let reset = match default_value.as_str() {
-                    Some(reset) => reset.to_string(),
-                    None => default_value.to_string(),
-                };
-                (name.clone(), reset)
-            }
-        };
-        let user_value = match section {
-            Some(section) => user.get(section).and_then(|table| table.get(name)),
-            None => user.get(name),
-        };
-        match user_value {
-            Some(user_value) if user_value == default_value => unchanged += 1,
+    for entry in DefaultEntry::list(&defaults) {
+        match entry.find_in(&user) {
+            Some(value) if value == entry.value => unchanged += 1,
             Some(_) => report.push(format!(
-                "Not changing your {label} definition - remove it to reset it to `{reset}`"
+                "Not changing your **{}** definition - remove it to reset it to `{}`",
+                entry.label(),
+                entry.description(&default_config),
             )),
             None => {
-                let added = match section {
-                    Some(section) => {
-                        let item = default_doc[section][name].clone();
-                        let table = doc.entry(section).or_insert_with(|| {
-                            let mut table = Table::new();
-                            table.set_implicit(true);
-                            Item::Table(table)
-                        });
-                        table
-                            .as_table_like_mut()
-                            .map(|table| table.insert(name, item))
-                            .is_some()
-                    }
-                    None => {
-                        doc.insert(name, default_doc[name].clone());
-                        true
-                    }
-                };
-                if added {
-                    report.push(format!("Adding {label}"));
-                } else {
-                    report.push(format!(
-                        "Not changing your {} definition",
-                        section.map_or("", String::as_str),
-                    ));
-                }
+                entry.copy(&default_doc, &mut doc);
+                report.push(format!("Adding **{}**", entry.label()));
             }
         }
     }
     Ok((doc.to_string(), unchanged))
 }
 
-fn parse_table(toml: &str) -> GagaResult<toml::Table> {
+fn parse_table(
+    toml: &str,
+    path: &Path,
+) -> GagaResult<toml::Table> {
     toml::from_str(toml).map_err(|source| GagaError::Config {
-        path: PathBuf::new(),
+        path: path.to_path_buf(),
         source,
     })
+}
+
+/// An entry of the default configuration: either a top level value,
+/// or a value of a top level table
+struct DefaultEntry<'d> {
+    section: Option<&'d str>,
+    name: &'d str,
+    value: &'d toml::Value,
+}
+
+impl<'d> DefaultEntry<'d> {
+    fn list(defaults: &'d toml::Table) -> Vec<Self> {
+        let mut entries = Vec::new();
+        for (key, value) in defaults {
+            match value {
+                toml::Value::Table(table) => {
+                    entries.extend(table.iter().map(|(name, value)| Self {
+                        section: Some(key),
+                        name,
+                        value,
+                    }));
+                }
+                _ => entries.push(Self {
+                    section: None,
+                    name: key,
+                    value,
+                }),
+            }
+        }
+        entries
+    }
+    fn find_in<'t>(
+        &self,
+        table: &'t toml::Table,
+    ) -> Option<&'t toml::Value> {
+        match self.section {
+            Some(section) => table.get(section)?.get(self.name),
+            None => table.get(self.name),
+        }
+    }
+    /// How the entry is called in the report
+    fn label(&self) -> String {
+        match self.section {
+            Some("commands") => format!("gg {}", self.name),
+            _ => self.name.to_string(),
+        }
+    }
+    /// What the default value is, for the report
+    fn description(
+        &self,
+        default_config: &Config,
+    ) -> String {
+        match (self.section, self.value.as_str()) {
+            (Some("aliases"), Some(target)) => match default_config.alias_command(target) {
+                Some(tokens) => tokens.join(" "),
+                None => format!("gg {target}"),
+            },
+            (None, Some(value)) => value.to_string(),
+            _ => self.value.to_string(),
+        }
+    }
+    /// Copy the entry from the default document to another one,
+    /// which must be a valid configuration without this entry
+    fn copy(
+        &self,
+        default_doc: &DocumentMut,
+        doc: &mut DocumentMut,
+    ) {
+        match self.section {
+            Some(section) => {
+                let item = default_doc[section][self.name].clone();
+                let table = doc.entry(section).or_insert_with(|| {
+                    let mut table = Table::new();
+                    table.set_implicit(true);
+                    Item::Table(table)
+                });
+                table[self.name] = item;
+            }
+            None => {
+                doc.insert(self.name, default_doc[self.name].clone());
+            }
+        }
+    }
 }
 
 #[test]
@@ -272,15 +328,58 @@ fn test_is_installed() {
     assert!(!is_installed(""));
 }
 
-#[test]
-fn test_complete_config() {
-    let mut report = Vec::new();
-    let (completed, unchanged) = complete_config(DEFAULT_CONFIG, &mut report).unwrap();
-    assert_eq!(completed, DEFAULT_CONFIG);
-    assert!(report.is_empty());
-    assert!(unchanged > 10);
+#[cfg(test)]
+mod config_tests {
+    use super::*;
 
-    let toml = r#"# my config
+    fn complete(toml: &str) -> GagaResult<(String, usize, Vec<String>)> {
+        let mut report = Vec::new();
+        let (completed, unchanged) = complete_config(toml, Path::new("test.toml"), &mut report)?;
+        Ok((completed, unchanged, report))
+    }
+
+    fn table(toml: &str) -> toml::Table {
+        toml::from_str(toml).unwrap()
+    }
+
+    #[test]
+    fn test_default_config_is_complete() {
+        let (completed, unchanged, report) = complete(DEFAULT_CONFIG).unwrap();
+        assert_eq!(completed, DEFAULT_CONFIG);
+        assert!(report.is_empty());
+        assert!(unchanged > 10);
+    }
+
+    #[test]
+    fn test_empty_config_gets_all_defaults() {
+        let (completed, unchanged, report) = complete("").unwrap();
+        assert_eq!(table(&completed), table(DEFAULT_CONFIG));
+        assert_eq!(unchanged, 0);
+        assert!(report.iter().all(|line| line.starts_with("Adding **")));
+    }
+
+    #[test]
+    fn test_inline_tables_are_completed() {
+        let (completed, _, report) = complete("aliases = { gs = \"status\" }\n").unwrap();
+        assert!(report.contains(&"Adding **ga**".to_string()));
+        let completed = table(&completed);
+        assert_eq!(completed["aliases"]["gs"].as_str(), Some("status"));
+        assert_eq!(completed["aliases"]["ga"].as_str(), Some("add"));
+    }
+
+    #[test]
+    fn test_invalid_config_is_refused() {
+        for toml in ["bare_command = \"br\"\n", "aliases = 3\n", "[aliases"] {
+            assert!(matches!(
+                complete(toml),
+                Err(GagaError::Config { path, .. }) if path == Path::new("test.toml"),
+            ));
+        }
+    }
+
+    #[test]
+    fn test_changed_entries_are_kept() {
+        let toml = r#"# my config
 max_listed_on_enter = 20
 
 [aliases]
@@ -294,32 +393,30 @@ command = ["git", "log"]
 [commands.rm]
 command = ["trash"]
 "#;
-    let (completed, unchanged) = complete_config(toml, &mut report).unwrap();
-    assert_eq!(unchanged, 2);
-    assert!(completed.starts_with("# my config\nmax_listed_on_enter = 20\n"));
-    assert!(completed.contains("gs = \"status\" # kept\nga = \"add -p\"\ngl = \"log\"\n"));
-    assert!(report.contains(&"Adding gd".to_string()));
-    assert!(report.contains(&"Adding jump_function".to_string()));
-    assert!(report.contains(&"Adding gg add".to_string()));
-    assert!(report.contains(
-        &"Not changing your ga definition - remove it to reset it to `git add`".to_string()
-    ));
-    assert!(
-        report.contains(
-            &"Not changing your gg rm definition - remove it to reset it to \
-        `{ command = [\"rm\", \"-r\", \"--\"], numbers = true, status_after = true }`"
-                .to_string()
-        )
-    );
-    let config = Config::parse(&completed, "test".into()).unwrap();
-    assert_eq!(config.aliases["ga"], "add -p");
-    assert_eq!(config.commands["rm"].command, ["trash"]);
-    assert_eq!(config.commands["log"].command, ["git", "log"]);
-    assert_eq!(config.commands["diff"].command, ["git", "diff"]);
+        let (completed, unchanged, report) = complete(toml).unwrap();
+        assert_eq!(unchanged, 2);
+        assert!(completed.starts_with("# my config\nmax_listed_on_enter = 20\n"));
+        assert!(completed.contains("gs = \"status\" # kept\nga = \"add -p\"\ngl = \"log\"\n"));
+        for line in [
+            "Adding **gd**",
+            "Adding **jump_function**",
+            "Adding **gg add**",
+            "Not changing your **max_listed_on_enter** definition - remove it to reset it to `50`",
+            "Not changing your **ga** definition - remove it to reset it to `git add`",
+            "Not changing your **gg rm** definition - remove it to reset it to \
+            `{ command = [\"rm\", \"-r\", \"--\"], numbers = true, status_after = true }`",
+        ] {
+            assert!(report.contains(&line.to_string()), "missing: {line}");
+        }
+        let config = Config::parse(&completed, "test".into()).unwrap();
+        assert_eq!(config.aliases["ga"], "add -p");
+        assert_eq!(config.commands["rm"].command, ["trash"]);
+        assert_eq!(config.commands["log"].command, ["git", "log"]);
+        assert_eq!(config.commands["diff"].command, ["git", "diff"]);
 
-    // installing again changes nothing
-    let mut report = Vec::new();
-    let (again, _) = complete_config(&completed, &mut report).unwrap();
-    assert_eq!(again, completed);
-    assert!(report.iter().all(|line| line.starts_with("Not changing")));
+        // installing again changes nothing
+        let (again, _, report) = complete(&completed).unwrap();
+        assert_eq!(again, completed);
+        assert!(report.iter().all(|line| line.starts_with("Not changing")));
+    }
 }

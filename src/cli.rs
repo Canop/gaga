@@ -26,11 +26,11 @@ pub fn run() -> GagaResult<()> {
     let color = args.color();
     let mut out = io::BufWriter::new(io::stdout().lock());
     let Some(action) = args.action else {
-        return install_or_help(&mut out, config.as_ref().ok());
+        return install_or_help(&mut out, color, config.as_ref().ok());
     };
     match action {
         Action::Install => {
-            install(&mut out)?;
+            install(&mut out, color)?;
         }
         Action::Init { shell } => {
             write!(out, "{}", init_script(shell, &config?))?;
