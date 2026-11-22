@@ -17,11 +17,7 @@ use {
             Path,
             PathBuf,
         },
-        time::{
-            Duration,
-            SystemTime,
-            UNIX_EPOCH,
-        },
+        time::Duration,
     },
 };
 
@@ -124,13 +120,10 @@ impl Db {
         &self,
         root: &Path,
     ) -> GagaResult<()> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |duration| duration.as_secs() as i64);
         self.con.execute(
-            "INSERT INTO repo (path, visited) VALUES (?1, ?2)
-            ON CONFLICT(path) DO UPDATE SET visited = ?2",
-            params![root.as_os_str().as_bytes(), now],
+            "INSERT INTO repo (path, visited) VALUES (?1, unixepoch())
+            ON CONFLICT(path) DO UPDATE SET visited = unixepoch()",
+            [root.as_os_str().as_bytes()],
         )?;
         Ok(())
     }
