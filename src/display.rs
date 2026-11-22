@@ -6,6 +6,7 @@ use {
             self,
             Write,
         },
+        os::unix::ffi::OsStrExt,
         path::{
             Path,
             PathBuf,
@@ -83,14 +84,15 @@ impl StatusPrinter<'_> {
         }
         style.apply(content)
     }
-    /// The path as seen from the current directory
+    /// The path as seen from the current directory, in a
+    /// form which is only good for display
     fn display_path(
         &self,
-        path: &str,
+        path: &Path,
     ) -> String {
         let relative = relative_path(&self.root.join(path), self.cwd);
         let mut relative = relative.to_string_lossy().into_owned();
-        if path.ends_with('/') && !relative.ends_with('/') {
+        if path.as_os_str().as_bytes().ends_with(b"/") && !relative.ends_with('/') {
             relative.push('/');
         }
         sanitize(&relative)

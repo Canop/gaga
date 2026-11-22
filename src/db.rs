@@ -6,9 +6,17 @@ use {
         params,
     },
     std::{
+        ffi::OsString,
         fs,
         io,
-        path::Path,
+        os::unix::ffi::{
+            OsStrExt,
+            OsStringExt,
+        },
+        path::{
+            Path,
+            PathBuf,
+        },
         time::{
             Duration,
             SystemTime,
@@ -17,7 +25,7 @@ use {
     },
 };
 
-const DB_VERSION: u32 = 2;
+const DB_VERSION: u32 = 3;
 
 /// The global memory of gaga, shared by all shells
 pub struct Db {
@@ -48,7 +56,7 @@ impl Db {
     pub fn set_files(
         &mut self,
         session: u32,
-        paths: &[String],
+        paths: &[PathBuf],
     ) -> GagaResult<()> {
         let tx = self
             .con
@@ -65,7 +73,7 @@ impl Db {
         for (num, path) in (1u32..).zip(paths) {
             tx.execute(
                 "INSERT INTO session_file (session, num, path) VALUES (?1, ?2, ?3)",
-                params![session, num, path],
+                params![session, num, path.as_os_str().as_bytes()],
             )?;
         }
         tx.commit()?;
@@ -75,11 +83,11 @@ impl Db {
     pub fn files(
         &self,
         session: u32,
-    ) -> GagaResult<Vec<String>> {
+    ) -> GagaResult<Vec<PathBuf>> {
         let files = self
             .con
             .prepare("SELECT path FROM session_file WHERE session = ?1 ORDER BY num")?
-            .query_map([session], |row| row.get(0))?
+            .query_map([session], |row| row.get(0).map(path_from_blob))?
             .collect::<Result<_, _>>()?;
         Ok(files)
     }
@@ -94,7 +102,7 @@ impl Db {
         self.con.execute(
             "INSERT INTO repo (path, visited) VALUES (?1, ?2)
             ON CONFLICT(path) DO UPDATE SET visited = ?2",
-            params![root.to_string_lossy(), now],
+            params![root.as_os_str().as_bytes(), now],
         )?;
         Ok(())
     }
@@ -103,7 +111,11 @@ impl Db {
         let repos = self
             .con
             .prepare("SELECT path FROM repo ORDER BY visited DESC, path")?
-            .query_map([], |row| Ok(Repo { path: row.get(0)? }))?
+            .query_map([], |row| {
+                Ok(Repo {
+                    path: path_from_blob(row.get(0)?),
+                })
+            })?
             .collect::<Result<_, _>>()?;
         Ok(repos)
     }
@@ -111,10 +123,16 @@ impl Db {
         &self,
         repo: &Repo,
     ) -> GagaResult<()> {
-        self.con
-            .execute("DELETE FROM repo WHERE path = ?1", [&repo.path])?;
+        self.con.execute(
+            "DELETE FROM repo WHERE path = ?1",
+            [repo.path.as_os_str().as_bytes()],
+        )?;
         Ok(())
     }
+}
+
+fn path_from_blob(bytes: Vec<u8>) -> PathBuf {
+    PathBuf::from(OsString::from_vec(bytes))
 }
 
 fn user_version(con: &Connection) -> rusqlite::Result<u32> {
@@ -143,6 +161,23 @@ fn apply_patch(
                 visited INTEGER NOT NULL
             )",
         ),
+        // paths become blobs, to hold the ones which aren't UTF-8
+        2 => con.execute_batch(
+            "DROP TABLE session_file;
+            CREATE TABLE session_file (
+                session INTEGER NOT NULL,
+                num INTEGER NOT NULL,
+                path BLOB NOT NULL,
+                PRIMARY KEY (session, num)
+            );
+            ALTER TABLE repo RENAME TO text_repo;
+            CREATE TABLE repo (
+                path BLOB PRIMARY KEY,
+                visited INTEGER NOT NULL
+            );
+            INSERT INTO repo SELECT CAST(path AS BLOB), visited FROM text_repo;
+            DROP TABLE text_repo;",
+        ),
         _ => Ok(()),
     }
 }
@@ -162,7 +197,11 @@ fn test_session_files() {
     let mut db = Db::new(Connection::open_in_memory().unwrap()).unwrap();
     let session = std::process::id();
     let dead_session = i32::MAX as u32;
-    let paths = vec!["/r/a".to_string(), "/r/b c".to_string()];
+    let paths = vec![
+        PathBuf::from("/r/a"),
+        PathBuf::from("/r/b c"),
+        path_from_blob(b"/r/not\xffutf8".to_vec()),
+    ];
     db.set_files(dead_session, &paths).unwrap();
     assert_eq!(db.files(dead_session).unwrap(), paths);
     db.set_files(session, &paths).unwrap();
@@ -183,4 +222,21 @@ fn test_repos() {
     db.forget_repo(&repos[0]).unwrap();
     repos.remove(0);
     assert_eq!(db.repos().unwrap(), repos);
+}
+
+#[test]
+fn test_migration_to_blobs() {
+    let con = Connection::open_in_memory().unwrap();
+    apply_patch(&con, 0).unwrap();
+    apply_patch(&con, 1).unwrap();
+    con.execute_batch(
+        "INSERT INTO repo (path, visited) VALUES ('/dev/a', 12);
+        PRAGMA user_version = 2;",
+    )
+    .unwrap();
+    let db = Db::new(con).unwrap();
+    db.visit(Path::new("/dev/a")).unwrap();
+    let repos = db.repos().unwrap();
+    assert_eq!(repos.len(), 1);
+    assert_eq!(repos[0].path, Path::new("/dev/a"));
 }

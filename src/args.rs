@@ -7,6 +7,7 @@ use {
         ValueEnum,
     },
     std::{
+        ffi::OsString,
         io::{
             self,
             IsTerminal,
@@ -50,7 +51,7 @@ pub enum Action {
 
     /// a command defined in the configuration
     #[command(external_subcommand)]
-    Custom(Vec<String>),
+    Custom(Vec<OsString>),
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]

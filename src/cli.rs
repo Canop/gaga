@@ -3,12 +3,17 @@ use {
     clap::FromArgMatches,
     std::{
         env,
+        ffi::OsString,
         fs,
         io::{
             self,
             Write,
         },
-        path::Path,
+        os::unix::ffi::OsStrExt,
+        path::{
+            Path,
+            PathBuf,
+        },
         process::Command,
     },
 };
@@ -40,7 +45,9 @@ pub fn run() -> GagaResult<()> {
         Action::Jump { name } => {
             let repos = known_repos()?;
             let repo = best_match(&repos, &name).ok_or(GagaError::NoRepo(name))?;
-            println!("{}", repo.path);
+            let mut stdout = io::stdout().lock();
+            stdout.write_all(repo.path.as_os_str().as_bytes())?;
+            stdout.write_all(b"\n")?;
         }
         Action::Enter { previous } => {
             if let Err(e) = enter(&previous, color, config) {
@@ -108,10 +115,10 @@ fn print_status(
         let Some(session) = session().filter(|_| listed) else {
             return Ok(false);
         };
-        let paths: Vec<String> = status
+        let paths: Vec<PathBuf> = status
             .files
             .iter()
-            .map(|file| root.join(&file.path).to_string_lossy().into_owned())
+            .map(|file| root.join(&file.path))
             .collect();
         db.set_files(session, &paths)?;
         Ok(true)
@@ -140,18 +147,19 @@ fn print_status(
 /// Run a command of the configuration, `args` being its name
 /// followed by its arguments
 fn run_custom(
-    args: &[String],
+    args: &[OsString],
     color: bool,
     config: &Config,
 ) -> GagaResult<()> {
     let Some((name, args)) = args.split_first() else {
         return Ok(());
     };
+    let name = name.to_string_lossy();
     let command = config
         .commands
-        .get(name)
-        .ok_or_else(|| GagaError::UnknownCommand(name.clone()))?;
-    let mut tokens = command.tokens();
+        .get(name.as_ref())
+        .ok_or_else(|| GagaError::UnknownCommand(name.to_string()))?;
+    let mut tokens: Vec<OsString> = command.tokens().into_iter().map(OsString::from).collect();
     if command.numbers && args.iter().any(|arg| number_range(arg).is_some()) {
         let session = session().ok_or(GagaError::NoSession)?;
         let files = Db::open()?.files(session)?;
@@ -161,13 +169,13 @@ fn run_custom(
     }
     debug!("running {tokens:?}");
     let Some((exe, exe_args)) = tokens.split_first().filter(|(exe, _)| !exe.is_empty()) else {
-        return Err(GagaError::EmptyCommand(name.clone()));
+        return Err(GagaError::EmptyCommand(name.to_string()));
     };
     let exit_status = Command::new(exe)
         .args(exe_args)
         .status()
         .map_err(|source| GagaError::Spawn {
-            exe: exe.clone(),
+            exe: exe.to_string_lossy().into_owned(),
             source,
         })?;
     if !exit_status.success() {

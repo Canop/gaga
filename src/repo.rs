@@ -1,21 +1,25 @@
-use std::path::Path;
+use std::{
+    borrow::Cow,
+    path::PathBuf,
+};
 
 /// A repository of the global memory
 #[derive(Debug, PartialEq)]
 pub struct Repo {
     /// path of the root
-    pub path: String,
+    pub path: PathBuf,
 }
 
 impl Repo {
-    pub fn name(&self) -> &str {
-        Path::new(&self.path)
+    /// The name, for display and matching
+    pub fn name(&self) -> Cow<'_, str> {
+        self.path
             .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or(&self.path)
+            .unwrap_or(self.path.as_os_str())
+            .to_string_lossy()
     }
     pub fn exists(&self) -> bool {
-        Path::new(&self.path).join(".git").exists()
+        self.path.join(".git").exists()
     }
 }
 
@@ -26,7 +30,7 @@ pub fn best_match<'r>(
     name: &str,
 ) -> Option<&'r Repo> {
     let find =
-        |matches: fn(&str, &str) -> bool| repos.iter().find(|repo| matches(repo.name(), name));
+        |matches: fn(&str, &str) -> bool| repos.iter().find(|repo| matches(&repo.name(), name));
     find(|repo_name, name| repo_name == name)
         .or_else(|| find(|repo_name, name| repo_name.starts_with(name)))
         .or_else(|| find(|repo_name, name| repo_name.contains(name)))
@@ -42,13 +46,13 @@ fn test_best_match() {
     ]
     .into_iter()
     .map(|path| Repo {
-        path: path.to_string(),
+        path: PathBuf::from(path),
     })
     .collect();
     let check = |name, expected: Option<&str>| {
         assert_eq!(
-            best_match(&repos, name).map(|repo| repo.path.as_str()),
-            expected
+            best_match(&repos, name).map(|repo| repo.path.as_path()),
+            expected.map(std::path::Path::new),
         );
     };
     check("broot", Some("/dev/broot"));

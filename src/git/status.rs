@@ -1,7 +1,12 @@
 use {
     crate::*,
     std::{
-        path::Path,
+        ffi::OsStr,
+        os::unix::ffi::OsStrExt,
+        path::{
+            Path,
+            PathBuf,
+        },
         process::Command,
     },
 };
@@ -22,8 +27,8 @@ pub struct FileStatus {
     /// state in the work tree, `.` when unchanged
     pub unstaged: char,
     /// path relative to the root of the repository
-    pub path: String,
-    pub renamed_from: Option<String>,
+    pub path: PathBuf,
+    pub renamed_from: Option<PathBuf>,
 }
 
 impl Status {
@@ -51,24 +56,25 @@ impl Status {
     /// Parse the output of `git status --porcelain=v2 --branch -z`
     pub fn parse(output: &[u8]) -> GagaResult<Self> {
         let mut status = Self::default();
-        let mut records = output.split(|&b| b == 0).map(String::from_utf8_lossy);
+        let mut records = output.split(|&b| b == 0);
         while let Some(record) = records.next() {
-            let Some((kind, rest)) = record.split_once(' ') else {
+            let Some(space_idx) = record.iter().position(|&b| b == b' ') else {
                 continue;
             };
+            let (kind, rest) = (&record[..space_idx], &record[space_idx + 1..]);
             match kind {
-                "#" => status.read_header(rest)?,
-                "1" => status.files.push(FileStatus::parse(rest, 8, None)?),
-                "2" => {
+                b"#" => status.read_header(&String::from_utf8_lossy(rest))?,
+                b"1" => status.files.push(FileStatus::parse(rest, 8, None)?),
+                b"2" => {
                     let renamed_from = records.next().ok_or(GagaError::InvalidStatus)?;
-                    let file = FileStatus::parse(rest, 9, Some(renamed_from.into_owned()))?;
+                    let file = FileStatus::parse(rest, 9, Some(path_from_bytes(renamed_from)))?;
                     status.files.push(file);
                 }
-                "u" => status.files.push(FileStatus::parse(rest, 10, None)?),
-                "?" => status.files.push(FileStatus {
+                b"u" => status.files.push(FileStatus::parse(rest, 10, None)?),
+                b"?" => status.files.push(FileStatus {
                     staged: '?',
                     unstaged: '?',
-                    path: rest.to_string(),
+                    path: path_from_bytes(rest),
                     renamed_from: None,
                 }),
                 _ => {}
@@ -105,17 +111,16 @@ impl FileStatus {
     /// Parse the fields of a changed entry: the first one holds
     /// the two states, the last one is the path
     fn parse(
-        fields: &str,
+        fields: &[u8],
         field_count: usize,
-        renamed_from: Option<String>,
+        renamed_from: Option<PathBuf>,
     ) -> GagaResult<Self> {
-        let mut fields = fields.splitn(field_count, ' ');
-        let mut states = fields.next().unwrap_or_default().chars();
-        match (states.next(), states.next(), fields.nth(field_count - 2)) {
-            (Some(staged), Some(unstaged), Some(path)) => Ok(Self {
-                staged,
-                unstaged,
-                path: path.to_string(),
+        let mut fields = fields.splitn(field_count, |&b| b == b' ');
+        match (fields.next(), fields.nth(field_count - 2)) {
+            (Some(&[staged, unstaged]), Some(path)) => Ok(Self {
+                staged: staged as char,
+                unstaged: unstaged as char,
+                path: path_from_bytes(path),
                 renamed_from,
             }),
             _ => Err(GagaError::InvalidStatus),
@@ -123,27 +128,28 @@ impl FileStatus {
     }
 }
 
+fn path_from_bytes(bytes: &[u8]) -> PathBuf {
+    PathBuf::from(OsStr::from_bytes(bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        std::{
-            fs,
-            path::PathBuf,
-        },
+        std::fs,
     };
 
     fn file(
         states: &str,
-        path: &str,
-        renamed_from: Option<&str>,
+        path: &[u8],
+        renamed_from: Option<&[u8]>,
     ) -> FileStatus {
         let mut states = states.chars();
         FileStatus {
             staged: states.next().unwrap(),
             unstaged: states.next().unwrap(),
-            path: path.to_string(),
-            renamed_from: renamed_from.map(String::from),
+            path: path_from_bytes(path),
+            renamed_from: renamed_from.map(path_from_bytes),
         }
     }
 
@@ -157,7 +163,8 @@ mod tests {
             1 A. N... 000000 100644 100644 0000 bbbb new.rs\0\
             2 R. N... 100644 100644 100644 aaaa bbbb R100 new name.rs\0old name.rs\0\
             u UU N... 100644 100644 100644 100644 aaaa bbbb cccc conflict.rs\0\
-            ? notes/\0";
+            ? notes/\0\
+            ? not\xffutf8\0";
         let status = Status::parse(output).unwrap();
         assert_eq!(
             status,
@@ -166,11 +173,12 @@ mod tests {
                 ahead: 2,
                 behind: 1,
                 files: vec![
-                    file(".M", "src/a b.rs", None),
-                    file("A.", "new.rs", None),
-                    file("R.", "new name.rs", Some("old name.rs")),
-                    file("UU", "conflict.rs", None),
-                    file("??", "notes/", None),
+                    file(".M", b"src/a b.rs", None),
+                    file("A.", b"new.rs", None),
+                    file("R.", b"new name.rs", Some(b"old name.rs")),
+                    file("UU", b"conflict.rs", None),
+                    file("??", b"notes/", None),
+                    file("??", b"not\xffutf8", None),
                 ],
             }
         );
@@ -224,7 +232,17 @@ mod tests {
         assert_eq!(status.branch, "trunk");
         assert_eq!(
             status.files,
-            vec![file("AM", "a.txt", None), file("??", "b.txt", None)],
+            vec![file("AM", b"a.txt", None), file("??", b"b.txt", None)],
         );
+    }
+
+    // macOS refuses such file names
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_read_non_utf8() {
+        let repo = TestRepo::new("non-utf8");
+        fs::write(repo.dir.join(path_from_bytes(b"not\xffutf8")), "a").unwrap();
+        let status = Status::read(&repo.dir).unwrap();
+        assert_eq!(status.files, vec![file("??", b"not\xffutf8", None)]);
     }
 }
