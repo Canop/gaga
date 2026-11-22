@@ -12,6 +12,7 @@ use {
     unicode_width::UnicodeWidthStr,
 };
 
+/// A shell for which gaga can generate its functions and hook
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shell {
     Bash,
@@ -32,6 +33,7 @@ impl Shell {
     pub fn init_line(self) -> String {
         format!("eval \"$(gaga init {})\"", self.name())
     }
+    /// The name of the shell, as given to `gaga init`
     pub fn name(self) -> &'static str {
         match self {
             Self::Bash => "bash",
@@ -57,12 +59,15 @@ impl Shell {
     }
 }
 
+/// The function calling gaga with the id of the shell session,
+/// and with `bare` when there's no argument
 const GG_FUNCTION: &str = r#"unalias gg 2>/dev/null
 function gg {
     GAGA_SESSION=$$ gaga "${@:-bare}"
 }
 "#;
 
+/// Call `gaga enter` when the directory changes
 const ZSH_HOOK: &str = r#"
 function _gaga_chpwd {
     GAGA_SESSION=$$ gaga enter "$OLDPWD"
@@ -71,6 +76,8 @@ autoload -Uz add-zsh-hook
 add-zsh-hook chpwd _gaga_chpwd
 "#;
 
+/// Call `gaga enter` before a prompt if the directory changed since
+/// the previous one, while keeping the exit code of the last command
 const BASH_HOOK: &str = r#"
 function _gaga_prompt {
     local code=$?

@@ -56,11 +56,14 @@ pub struct Db {
 }
 
 impl Db {
+    /// Open the database of the user, creating it if there's none
     pub fn open() -> GagaResult<Self> {
         let dir = gaga_dir("XDG_STATE_HOME", ".local/state")?;
         fs::create_dir_all(&dir)?;
         Self::new(Connection::open(dir.join("gaga.db3"))?)
     }
+    /// Set up the connection, and bring the database to the version
+    /// of this program
     pub fn new(mut con: Connection) -> GagaResult<Self> {
         con.busy_timeout(Duration::from_millis(200))?;
         con.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
@@ -140,6 +143,7 @@ impl Db {
             .collect::<Result<_, _>>()?;
         Ok(repos)
     }
+    /// Remove the repository from the known ones
     pub fn forget_repo(
         &self,
         repo: &Repo,

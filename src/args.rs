@@ -16,6 +16,7 @@ use {
     },
 };
 
+/// Launch arguments
 #[derive(Debug, Parser)]
 #[command(about, version)]
 pub struct Args {
@@ -27,6 +28,7 @@ pub struct Args {
     pub action: Option<Action>,
 }
 
+/// What gaga is asked to do
 #[derive(Debug, Subcommand)]
 pub enum Action {
     /// add what's missing in the rc file of the shell and in the configuration
@@ -54,6 +56,7 @@ pub enum Action {
     Custom(Vec<OsString>),
 }
 
+/// A boolean which can be left to the program to decide
 #[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriBool {
     Auto,
@@ -71,6 +74,8 @@ impl Args {
             None => command,
         }
     }
+    /// Whether to have styles and colors: when not told,
+    /// only if stdout is a terminal
     pub fn color(&self) -> bool {
         match self.color {
             TriBool::Auto => io::stdout().is_terminal(),

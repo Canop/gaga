@@ -18,6 +18,7 @@ impl Repo {
             .unwrap_or(self.path.as_os_str())
             .to_string_lossy()
     }
+    /// Whether there's still a repository at this path
     pub fn exists(&self) -> bool {
         self.path.join(".git").exists()
     }

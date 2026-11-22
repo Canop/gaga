@@ -68,6 +68,8 @@ pub enum GagaError {
 pub type GagaResult<T> = Result<T, GagaError>;
 
 impl GagaError {
+    /// Print the error on stderr, unless there's nothing to add to what
+    /// the user knows, and return the exit code of the program
     pub fn report(&self) -> ExitCode {
         match self {
             Self::Io(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::from(141),

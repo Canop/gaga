@@ -32,14 +32,19 @@ pub enum FileListing {
     NumberedList,
 }
 
+/// What's needed to write the status of a repository
 pub struct StatusPrinter<'a> {
     pub color: bool,
     pub listing: FileListing,
+    /// the current directory, paths being shown relative to it
     pub cwd: &'a Path,
+    /// the root of the repository
     pub root: &'a Path,
 }
 
 impl StatusPrinter<'_> {
+    /// Write a line for the branch, followed by the changed files
+    /// or their count
     pub fn write<W: Write>(
         &self,
         w: &mut W,
@@ -79,6 +84,7 @@ impl StatusPrinter<'_> {
         }
         Ok(())
     }
+    /// Give the color to the content, unless colors aren't wanted
     fn paint<D: Display>(
         &self,
         content: D,
@@ -105,6 +111,7 @@ impl StatusPrinter<'_> {
     }
 }
 
+/// The char shown for a state: a space for the unchanged one
 fn state_char(state: char) -> char {
     match state {
         '.' => ' ',

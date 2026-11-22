@@ -11,15 +11,20 @@ use {
     },
 };
 
+/// The state of a repository, as told by `git status`
 #[derive(Debug, Default, PartialEq)]
 pub struct Status {
     /// name of the branch, or short id of the commit when HEAD is detached
     pub branch: String,
+    /// number of commits the upstream branch doesn't have
     pub ahead: usize,
+    /// number of commits of the upstream branch which are missing
     pub behind: usize,
+    /// the changed and untracked files
     pub files: Vec<FileStatus>,
 }
 
+/// A changed or untracked file
 #[derive(Debug, PartialEq)]
 pub struct FileStatus {
     /// state in the index, `.` when unchanged
@@ -28,10 +33,12 @@ pub struct FileStatus {
     pub unstaged: char,
     /// path relative to the root of the repository
     pub path: PathBuf,
+    /// previous path of a renamed or copied file
     pub renamed_from: Option<PathBuf>,
 }
 
 impl Status {
+    /// Ask git the status of the repository containing the directory
     pub fn read(dir: &Path) -> GagaResult<Self> {
         let output = Command::new("git")
             .args([
@@ -82,6 +89,8 @@ impl Status {
         }
         Ok(status)
     }
+    /// Read a header record, without its `# ` prefix: only the ones
+    /// about the branch are used
     fn read_header(
         &mut self,
         header: &str,

@@ -18,6 +18,7 @@ use {
     },
 };
 
+/// Do what the launch arguments ask for
 pub fn run() -> GagaResult<()> {
     init_cli_log!();
     let config = Config::load();
@@ -71,6 +72,8 @@ fn session() -> Option<u32> {
     env::var("GAGA_SESSION").ok()?.parse().ok()
 }
 
+/// Print the status if the current directory is in a repository
+/// which isn't the one of the previous directory
 fn enter<W: Write>(
     w: &mut W,
     previous: &Path,

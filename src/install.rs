@@ -261,6 +261,7 @@ struct DefaultEntry<'d> {
 }
 
 impl<'d> DefaultEntry<'d> {
+    /// The entries of the default configuration
     fn list(defaults: &'d toml::Table) -> Vec<Self> {
         let mut entries = Vec::new();
         for (key, value) in defaults {
@@ -281,6 +282,7 @@ impl<'d> DefaultEntry<'d> {
         }
         entries
     }
+    /// The value this entry has in another configuration, if it's there
     fn find_in<'t>(
         &self,
         table: &'t toml::Table,

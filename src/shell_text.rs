@@ -19,6 +19,7 @@ pub struct ShellName(String);
 #[serde(try_from = "String")]
 pub struct AliasTarget(String);
 
+/// Why a string can't be written in shell code
 #[derive(Debug, thiserror::Error)]
 pub enum ShellTextError {
     #[error(
@@ -65,6 +66,7 @@ impl AliasTarget {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+    /// The name of the command, followed by its arguments
     pub fn words(&self) -> impl Iterator<Item = &str> {
         self.0.split(' ')
     }

@@ -12,24 +12,31 @@ use {
     },
 };
 
+/// The configuration written by the installation
 pub static DEFAULT_CONFIG: &str = include_str!("../defaults/default-config.toml");
 
+/// The content of the configuration file
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// number of changed files above which they're only counted
+    /// when entering a repository
     pub max_listed_on_enter: Option<usize>,
     /// name of the shell function jumping to a repository
     pub jump_function: Option<ShellName>,
     /// shell alias -> arguments given to `gg`
     #[serde(default)]
     pub aliases: BTreeMap<ShellName, AliasTarget>,
+    /// name given to `gg` -> command
     #[serde(default)]
     pub commands: BTreeMap<String, CustomCommand>,
 }
 
+/// A command of the configuration, run with `gg <name> <args>`
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CustomCommand {
+    /// the executable and its first arguments
     pub command: Vec<String>,
     /// whether numbers and ranges in the arguments are replaced
     /// with the numbered files
@@ -41,6 +48,7 @@ pub struct CustomCommand {
 }
 
 impl Config {
+    /// The path of the configuration file
     pub fn path() -> GagaResult<PathBuf> {
         Ok(gaga_dir("XDG_CONFIG_HOME", ".config")?.join("config.toml"))
     }
@@ -53,6 +61,8 @@ impl Config {
             Err(e) => Err(e.into()),
         }
     }
+    /// Parse a configuration, the path only serving to tell
+    /// where an error comes from
     pub fn parse(
         toml: &str,
         path: PathBuf,
@@ -107,6 +117,7 @@ pub fn gaga_dir(
     Ok(base.join("gaga"))
 }
 
+/// The home directory of the user
 pub fn home() -> GagaResult<PathBuf> {
     let home = env::var_os("HOME").ok_or(GagaError::NoHome)?;
     Ok(PathBuf::from(home))
