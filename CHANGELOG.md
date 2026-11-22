@@ -1,4 +1,11 @@
-### next
+
+<a name="v0.2.0"></a>
+### v0.2.0 - 2026/11/22
+- support of non UTF-8 paths
+- better error handling
+
+<a name="v0.1.0"></a>
+### v0.1.0 - 2026/11/21
 - status with numbered files, shown when entering a repository
 - numbers and ranges as arguments of the commands defined in the configuration
 - `c` to jump to a visited repository, with completion of its name
