@@ -1,5 +1,6 @@
 use {
     crate::*,
+    fs_err as fs,
     rusqlite::{
         Connection,
         TransactionBehavior,
@@ -7,7 +8,6 @@ use {
     },
     std::{
         ffi::OsString,
-        fs,
         io,
         os::unix::ffi::{
             OsStrExt,
@@ -187,9 +187,27 @@ fn is_alive(pid: u32) -> bool {
     let Ok(pid) = libc::pid_t::try_from(pid) else {
         return false;
     };
-    pid > 0
-        && (unsafe { libc::kill(pid, 0) } == 0
-            || io::Error::last_os_error().raw_os_error() == Some(libc::EPERM))
+    if pid <= 0 {
+        return false;
+    }
+    match send_null_signal(pid) {
+        Ok(()) => true,
+        // the process exists but belongs to another user
+        Err(e) => e.raw_os_error() == Some(libc::EPERM),
+    }
+}
+
+/// Send the null signal to the process: nothing is delivered, the
+/// system only checks that the process exists and can be signaled
+fn send_null_signal(pid: libc::pid_t) -> io::Result<()> {
+    // SAFETY: kill has no memory safety requirement, it takes two
+    // integers and returns one
+    let result = unsafe { libc::kill(pid, 0) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 #[test]

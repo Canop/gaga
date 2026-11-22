@@ -3,6 +3,7 @@ use {
         io::{
             self,
             IsTerminal,
+            Write,
         },
         path::PathBuf,
         process::ExitCode,
@@ -33,6 +34,8 @@ pub enum GagaError {
     TomlEdit(#[from] toml_edit::TomlError),
     #[error("**Error:** no configuration file: run `gaga install`")]
     NoConfig,
+    #[error("**Error:** can't read the current directory: {0}")]
+    Cwd(#[source] io::Error),
     #[error("**Error:** no `HOME` in env")]
     NoHome,
     #[error("**Error:** not in a git repository")]
@@ -75,8 +78,11 @@ impl GagaError {
                 } else {
                     MadSkin::no_style()
                 };
+                let mut stderr = io::stderr().lock();
                 for line in self.to_string().lines() {
-                    eprintln!("{}", skin.inline(line));
+                    if writeln!(stderr, "{}", skin.inline(line)).is_err() {
+                        break;
+                    }
                 }
                 ExitCode::FAILURE
             }

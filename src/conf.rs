@@ -1,11 +1,11 @@
 use {
     crate::*,
+    fs_err as fs,
     lazy_regex::regex_replace_all,
     serde::Deserialize,
     std::{
         collections::BTreeMap,
         env,
-        fs,
         io,
         path::PathBuf,
     },

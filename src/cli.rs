@@ -1,10 +1,10 @@
 use {
     crate::*,
     clap::FromArgMatches,
+    fs_err as fs,
     std::{
         env,
         ffi::OsString,
-        fs,
         io::{
             self,
             Write,
@@ -24,40 +24,45 @@ pub fn run() -> GagaResult<()> {
     let matches = Args::command_with(config.as_ref().ok()).get_matches();
     let args = Args::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
     let color = args.color();
+    let mut out = io::BufWriter::new(io::stdout().lock());
     let Some(action) = args.action else {
-        return install_or_help(config.as_ref().ok());
+        return install_or_help(&mut out, config.as_ref().ok());
     };
     match action {
         Action::Install => {
-            install()?;
+            install(&mut out)?;
         }
         Action::Init { shell } => {
-            print!("{}", init_script(shell, &config?));
+            write!(out, "{}", init_script(shell, &config?))?;
         }
         Action::Status => {
-            print_status(color, None, true)?;
+            remember_and_print_status(&mut out, color, None, true)?;
         }
         Action::Repos => {
-            for repo in known_repos()? {
-                println!("{}", repo.name());
+            let db = Db::open()?;
+            forget_missing_repos(&db)?;
+            for repo in db.repos()? {
+                writeln!(out, "{}", repo.name())?;
             }
         }
         Action::Jump { name } => {
-            let repos = known_repos()?;
+            let db = Db::open()?;
+            forget_missing_repos(&db)?;
+            let repos = db.repos()?;
             let repo = best_match(&repos, &name).ok_or(GagaError::NoRepo(name))?;
-            let mut stdout = io::stdout().lock();
-            stdout.write_all(repo.path.as_os_str().as_bytes())?;
-            stdout.write_all(b"\n")?;
+            out.write_all(repo.path.as_os_str().as_bytes())?;
+            out.write_all(b"\n")?;
         }
         Action::Enter { previous } => {
-            if let Err(e) = enter(&previous, color, config) {
+            if let Err(e) = enter(&mut out, &previous, color, config) {
                 warn!("enter failed: {e}");
             }
         }
         Action::Custom(args) => {
-            run_custom(&args, color, &config?)?;
+            run_custom(&mut out, &args, color, &config?)?;
         }
     }
+    out.flush()?;
     Ok(())
 }
 
@@ -66,12 +71,13 @@ fn session() -> Option<u32> {
     env::var("GAGA_SESSION").ok()?.parse().ok()
 }
 
-fn enter(
+fn enter<W: Write>(
+    w: &mut W,
     previous: &Path,
     color: bool,
     config: GagaResult<Config>,
 ) -> GagaResult<()> {
-    let cwd = env::current_dir()?;
+    let cwd = env::current_dir().map_err(GagaError::Cwd)?;
     let Some(root) = find_root(&cwd) else {
         return Ok(());
     };
@@ -80,50 +86,32 @@ fn enter(
     {
         return Ok(());
     }
-    print_status(color, config?.max_listed_on_enter, false)
+    remember_and_print_status(w, color, config?.max_listed_on_enter, false)
 }
 
-/// The repositories of the global memory, last visited first,
-/// the ones which don't exist anymore being forgotten
-fn known_repos() -> GagaResult<Vec<Repo>> {
-    let db = Db::open()?;
-    let mut repos = db.repos()?;
-    for repo in repos.iter().filter(|repo| !repo.exists()) {
+/// Remove from the global memory the repositories which don't exist anymore
+fn forget_missing_repos(db: &Db) -> GagaResult<()> {
+    for repo in db.repos()?.iter().filter(|repo| !repo.exists()) {
         db.forget_repo(repo)?;
     }
-    repos.retain(Repo::exists);
-    Ok(repos)
+    Ok(())
 }
 
-/// Print the status of the current repository, which is remembered
-/// as visited.
+/// Remember the current repository and its changed files, then print
+/// its status.
 ///
-/// Files are numbered when their list can be saved for the session.
 /// A failure to write in the global memory is an error only when `strict`.
-fn print_status(
+fn remember_and_print_status<W: Write>(
+    w: &mut W,
     color: bool,
     max_listed: Option<usize>,
     strict: bool,
 ) -> GagaResult<()> {
-    let cwd = env::current_dir()?;
+    let cwd = env::current_dir().map_err(GagaError::Cwd)?;
     let root = find_root(&cwd).ok_or(GagaError::NotInRepo)?;
     let status = time!(Status::read(&cwd))?;
     let listed = max_listed.is_none_or(|max| status.files.len() <= max);
-    let save = || -> GagaResult<bool> {
-        let mut db = Db::open()?;
-        db.visit(root)?;
-        let Some(session) = session().filter(|_| listed) else {
-            return Ok(false);
-        };
-        let paths: Vec<PathBuf> = status
-            .files
-            .iter()
-            .map(|file| root.join(&file.path))
-            .collect();
-        db.set_files(session, &paths)?;
-        Ok(true)
-    };
-    let numbered = match time!(save()) {
+    let numbered = match time!(remember_status(root, &status, listed)) {
         Ok(numbered) => numbered,
         Err(e) if strict => return Err(e),
         Err(e) => {
@@ -138,15 +126,38 @@ fn print_status(
         cwd: &cwd,
         root,
     };
-    let mut w = io::BufWriter::new(io::stdout().lock());
-    printer.write(&mut w, &status)?;
-    w.flush()?;
+    printer.write(w, &status)?;
     Ok(())
+}
+
+/// Record in the global memory the visit of the repository and, when
+/// they're listed in a shell session, its changed files as the numbered
+/// ones of this session.
+///
+/// Return whether the files are numbered.
+fn remember_status(
+    root: &Path,
+    status: &Status,
+    listed: bool,
+) -> GagaResult<bool> {
+    let mut db = Db::open()?;
+    db.visit(root)?;
+    let Some(session) = session().filter(|_| listed) else {
+        return Ok(false);
+    };
+    let paths: Vec<PathBuf> = status
+        .files
+        .iter()
+        .map(|file| root.join(&file.path))
+        .collect();
+    db.set_files(session, &paths)?;
+    Ok(true)
 }
 
 /// Run a command of the configuration, `args` being its name
 /// followed by its arguments
-fn run_custom(
+fn run_custom<W: Write>(
+    w: &mut W,
     args: &[OsString],
     color: bool,
     config: &Config,
@@ -183,7 +194,7 @@ fn run_custom(
         return Err(GagaError::CommandFailed(code.unwrap_or(1)));
     }
     if command.status_after {
-        print_status(color, None, true)?;
+        remember_and_print_status(w, color, None, true)?;
     }
     Ok(())
 }

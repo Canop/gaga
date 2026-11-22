@@ -136,7 +136,7 @@ fn path_from_bytes(bytes: &[u8]) -> PathBuf {
 mod tests {
     use {
         super::*,
-        std::fs,
+        fs_err as fs,
     };
 
     fn file(

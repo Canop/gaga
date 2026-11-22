@@ -1,7 +1,7 @@
 use {
     crate::*,
+    fs_err as fs,
     std::{
-        fs,
         io::{
             self,
             IsTerminal,
@@ -18,7 +18,7 @@ use {
 
 /// Add what's missing in the rc files of the shell and in the
 /// configuration file, and tell what was done
-pub fn install() -> GagaResult<()> {
+pub fn install<W: Write>(w: &mut W) -> GagaResult<()> {
     let mut report = Vec::new();
     let mut changed = false;
     let shell = Shell::current();
@@ -42,38 +42,43 @@ pub fn install() -> GagaResult<()> {
     let (unchanged, config_changed) = install_config(&mut report)?;
     changed |= config_changed;
     if report.is_empty() {
-        println!("Nothing to change");
+        writeln!(w, "Nothing to change")?;
     } else {
         for line in report {
-            println!("{line}");
+            writeln!(w, "{line}")?;
         }
         if unchanged > 0 {
-            println!("Other entries unchanged");
+            writeln!(w, "Other entries unchanged")?;
         }
     }
-    println!(
+    writeln!(
+        w,
         "\n{}\n\n\
         Aliases and commands are defined in {}\n\
         You can change them there, and add your own.\n\
         This list is also given by gaga --help",
         shell_help(&Config::load()?),
         Config::path()?.display(),
-    );
+    )?;
     if changed
         && let Some(shell) = shell
         && let Some(rc_path) = shell.rc_paths()?.iter().find(|path| path.exists())
     {
-        println!(
+        writeln!(
+            w,
             "\nTo apply the changes, open a new shell or run\n    source {}",
             rc_path.display(),
-        );
+        )?;
     }
     Ok(())
 }
 
 /// Offer to install when something's missing and the user
 /// can be asked, print the help in other cases
-pub fn install_or_help(config: Option<&Config>) -> GagaResult<()> {
+pub fn install_or_help<W: Write>(
+    w: &mut W,
+    config: Option<&Config>,
+) -> GagaResult<()> {
     let mut actions = String::new();
     if let Some(shell) = Shell::current() {
         for (path, _) in rc_files_to_complete(shell)? {
@@ -96,17 +101,18 @@ pub fn install_or_help(config: Option<&Config>) -> GagaResult<()> {
         Args::command_with(config).print_help()?;
         return Ok(());
     }
-    termimad::print_text(&format!(
-        "**gaga** isn't installed yet. The installation would\n{actions}"
-    ));
-    print!("Install now? [Y/n] ");
-    io::stdout().flush()?;
+    let offer = format!("**gaga** isn't installed yet. The installation would\n{actions}");
+    write!(w, "{}", termimad::term_text(&offer))?;
+    write!(w, "Install now? [Y/n] ")?;
+    w.flush()?;
     let mut answer = String::new();
     let read = io::stdin().read_line(&mut answer)?;
     if read == 0 || matches!(answer.trim().chars().next(), Some('n' | 'N')) {
         return Ok(());
     }
-    install()
+    install(w)?;
+    w.flush()?;
+    Ok(())
 }
 
 /// The rc files of the shell lacking the init line, with their content
