@@ -170,7 +170,7 @@ fn run_custom<W: Write>(
         .commands
         .get(name.as_ref())
         .ok_or_else(|| GagaError::UnknownCommand(name.to_string()))?;
-    let mut tokens: Vec<OsString> = command.tokens().into_iter().map(OsString::from).collect();
+    let mut tokens = command.tokens()?;
     if command.numbers && args.iter().any(|arg| number_range(arg).is_some()) {
         let session = session().ok_or(GagaError::NoSession)?;
         let files = Db::open()?.files(session)?;

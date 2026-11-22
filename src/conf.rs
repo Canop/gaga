@@ -1,11 +1,12 @@
 use {
     crate::*,
     fs_err as fs,
-    lazy_regex::regex_replace_all,
+    lazy_regex::regex,
     serde::Deserialize,
     std::{
         collections::BTreeMap,
         env,
+        ffi::OsString,
         io,
         path::PathBuf,
     },
@@ -73,17 +74,23 @@ impl Config {
 
 impl CustomCommand {
     /// The tokens of the command, every `$NAME` being replaced
-    /// with the content of the env variable
-    pub fn tokens(&self) -> Vec<String> {
-        self.command
-            .iter()
-            .map(|token| {
-                regex_replace_all!(r"\$(\w+)", token, |_, name| {
-                    env::var(name).unwrap_or_default()
-                })
-                .into_owned()
-            })
-            .collect()
+    /// with the content of the env variable, which must be set
+    pub fn tokens(&self) -> GagaResult<Vec<OsString>> {
+        let mut tokens = Vec::new();
+        for token in &self.command {
+            let mut expanded = OsString::new();
+            let mut end = 0;
+            for var in regex!(r"\$\w+").find_iter(token) {
+                let name = &var.as_str()[1..];
+                let value = env::var_os(name).ok_or_else(|| GagaError::NoEnvVar(name.into()))?;
+                expanded.push(&token[end..var.start()]);
+                expanded.push(value);
+                end = var.end();
+            }
+            expanded.push(&token[end..]);
+            tokens.push(expanded);
+        }
+        Ok(tokens)
     }
 }
 
@@ -113,4 +120,24 @@ fn test_default_config() {
         let name = target.split_whitespace().next().unwrap();
         assert!(name == "status" || config.commands.contains_key(name));
     }
+}
+
+#[test]
+fn test_tokens() {
+    let command = |tokens: &[&str]| CustomCommand {
+        command: tokens.iter().map(|token| token.to_string()).collect(),
+        numbers: false,
+        status_after: false,
+    };
+    let mut expanded = OsString::from("a");
+    expanded.push(env::var_os("HOME").unwrap());
+    expanded.push("/b");
+    assert_eq!(
+        command(&["a$HOME/b", "c"]).tokens().unwrap(),
+        [expanded, OsString::from("c")],
+    );
+    assert!(matches!(
+        command(&["$GAGA_UNSET_VAR"]).tokens(),
+        Err(GagaError::NoEnvVar(name)) if name == "GAGA_UNSET_VAR",
+    ));
 }

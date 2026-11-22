@@ -25,6 +25,8 @@ pub enum GagaError {
     Io(#[from] io::Error),
     #[error("**Database error:** {0}")]
     Db(#[from] rusqlite::Error),
+    #[error("**Error:** the database was written by a more recent version of gaga")]
+    DbTooRecent,
     #[error("**Error:** invalid configuration in `{path}`: {source}")]
     Config {
         path: PathBuf,
@@ -48,6 +50,8 @@ pub enum GagaError {
     NoRepo(String),
     #[error("**Error:** unknown command `{0}`")]
     UnknownCommand(String),
+    #[error("**Error:** env variable `{0}` isn't set")]
+    NoEnvVar(String),
     #[error("**Error:** nothing to run for command `{0}`")]
     EmptyCommand(String),
     #[error("**Error:** can't run `{exe}`: {source}")]

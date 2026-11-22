@@ -25,7 +25,34 @@ use {
     },
 };
 
-const DB_VERSION: u32 = 3;
+/// The patch at index n brings the database from version n to n+1
+const PATCHES: &[&str] = &[
+    "CREATE TABLE session_file (
+        session INTEGER NOT NULL,
+        num INTEGER NOT NULL,
+        path TEXT NOT NULL,
+        PRIMARY KEY (session, num)
+    )",
+    "CREATE TABLE repo (
+        path TEXT PRIMARY KEY,
+        visited INTEGER NOT NULL
+    )",
+    // paths become blobs, to hold the ones which aren't UTF-8
+    "DROP TABLE session_file;
+    CREATE TABLE session_file (
+        session INTEGER NOT NULL,
+        num INTEGER NOT NULL,
+        path BLOB NOT NULL,
+        PRIMARY KEY (session, num)
+    );
+    ALTER TABLE repo RENAME TO text_repo;
+    CREATE TABLE repo (
+        path BLOB PRIMARY KEY,
+        visited INTEGER NOT NULL
+    );
+    INSERT INTO repo SELECT CAST(path AS BLOB), visited FROM text_repo;
+    DROP TABLE text_repo;",
+];
 
 /// The global memory of gaga, shared by all shells
 pub struct Db {
@@ -41,12 +68,13 @@ impl Db {
     pub fn new(mut con: Connection) -> GagaResult<Self> {
         con.busy_timeout(Duration::from_millis(200))?;
         con.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
-        if user_version(&con)? < DB_VERSION {
+        if !missing_patches(&con)?.is_empty() {
             let tx = con.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            for version in user_version(&tx)?..DB_VERSION {
-                apply_patch(&tx, version)?;
+            // another process may have patched the database in between
+            for patch in missing_patches(&tx)? {
+                tx.execute_batch(patch)?;
             }
-            tx.pragma_update(None, "user_version", DB_VERSION)?;
+            tx.pragma_update(None, "user_version", PATCHES.len() as u32)?;
             tx.commit()?;
         }
         Ok(Self { con })
@@ -135,51 +163,15 @@ fn path_from_blob(bytes: Vec<u8>) -> PathBuf {
     PathBuf::from(OsString::from_vec(bytes))
 }
 
-fn user_version(con: &Connection) -> rusqlite::Result<u32> {
-    con.query_row("SELECT user_version FROM pragma_user_version", [], |row| {
-        row.get(0)
-    })
-}
-
-/// Bring the database from the given version to the next one
-fn apply_patch(
-    con: &Connection,
-    version: u32,
-) -> rusqlite::Result<()> {
-    match version {
-        0 => con.execute_batch(
-            "CREATE TABLE session_file (
-                session INTEGER NOT NULL,
-                num INTEGER NOT NULL,
-                path TEXT NOT NULL,
-                PRIMARY KEY (session, num)
-            )",
-        ),
-        1 => con.execute_batch(
-            "CREATE TABLE repo (
-                path TEXT PRIMARY KEY,
-                visited INTEGER NOT NULL
-            )",
-        ),
-        // paths become blobs, to hold the ones which aren't UTF-8
-        2 => con.execute_batch(
-            "DROP TABLE session_file;
-            CREATE TABLE session_file (
-                session INTEGER NOT NULL,
-                num INTEGER NOT NULL,
-                path BLOB NOT NULL,
-                PRIMARY KEY (session, num)
-            );
-            ALTER TABLE repo RENAME TO text_repo;
-            CREATE TABLE repo (
-                path BLOB PRIMARY KEY,
-                visited INTEGER NOT NULL
-            );
-            INSERT INTO repo SELECT CAST(path AS BLOB), visited FROM text_repo;
-            DROP TABLE text_repo;",
-        ),
-        _ => Ok(()),
-    }
+/// The patches the database needs to be at the version of this program
+fn missing_patches(con: &Connection) -> GagaResult<&'static [&'static str]> {
+    let version: u32 =
+        con.query_row("SELECT user_version FROM pragma_user_version", [], |row| {
+            row.get(0)
+        })?;
+    PATCHES
+        .get(version as usize..)
+        .ok_or(GagaError::DbTooRecent)
 }
 
 /// Tell whether there's a process with this pid
@@ -245,8 +237,8 @@ fn test_repos() {
 #[test]
 fn test_migration_to_blobs() {
     let con = Connection::open_in_memory().unwrap();
-    apply_patch(&con, 0).unwrap();
-    apply_patch(&con, 1).unwrap();
+    con.execute_batch(PATCHES[0]).unwrap();
+    con.execute_batch(PATCHES[1]).unwrap();
     con.execute_batch(
         "INSERT INTO repo (path, visited) VALUES ('/dev/a', 12);
         PRAGMA user_version = 2;",
@@ -257,4 +249,12 @@ fn test_migration_to_blobs() {
     let repos = db.repos().unwrap();
     assert_eq!(repos.len(), 1);
     assert_eq!(repos[0].path, Path::new("/dev/a"));
+}
+
+#[test]
+fn test_too_recent_db() {
+    let con = Connection::open_in_memory().unwrap();
+    con.pragma_update(None, "user_version", PATCHES.len() as u32 + 1)
+        .unwrap();
+    assert!(matches!(Db::new(con), Err(GagaError::DbTooRecent)));
 }
